@@ -1,0 +1,44 @@
+# Music Wrapped — filter and analysis configuration
+timezone_offset_hours: 8        # AWST; export timestamps are UTC
+
+# Artists removed outright (exact match on the artist portion of Track Description)
+blocked_artists:
+  - "UCB 2"                     # Radio station on the HomePod — not my listening
+
+# Sleep-music detection: an artist is classed as sleep/ambient when ALL thresholds are met
+sleep_filter:
+  enabled: true
+  min_plays: 20                 # ignore artists below this (too little signal)
+  night_share: 0.80             # fraction of plays between night_start and night_end (local)
+  homepod_share: 0.80           # fraction of plays sourced from HomePod
+  night_start: 20               # 8pm local
+  night_end: 6                  # 6am local
+  # Safety net: keyword match forces sleep classification regardless of thresholds
+  keywords: [sleep, noise, ambient, calm, dream, solfeggio, "hz", lullaby, rain, meditation]
+
+# Focus/ambient music played during the day (work): generative artists show a
+# distinctive signature — heavy repeats of few tracks, never skipped. Below
+# min_plays the same signature matches Christmas music, so the threshold stays
+# at 40; smaller residuals are caught by genre enrichment.
+focus_filter:
+  enabled: true
+  min_plays: 40
+  max_skip_rate: 0.03
+  min_plays_per_track: 4
+
+# After genre enrichment (enrich.py), these genres are also excluded
+excluded_genres: [Sleep, "New Age", Ambient, "Healthcare & Fitness"]
+
+report:
+  top_n: 20
+  years: all
+
+# Christmas music: tagged at track level (title keywords, or >=70% of a
+# track's plays in Nov-Dec with >=8 plays). Post-enrichment, iTunes genre
+# "Holiday" is authoritative. Modes: include | exclude | separate
+christmas_filter:
+  mode: separate
+  keywords: [christmas, santa, jingle, sleigh, noel, navidad, mistletoe,
+             snowman, rudolph, "silent night", "winter wonderland", december]
+  seasonal_share: 0.70
+  min_plays: 8
