@@ -16,11 +16,15 @@ TRACK_META_PATH = ROOT / "data" / "track_meta.json"
 
 def normalize_title(title: str) -> str:
     """Loose key for matching/de-duplication — strips remaster/live/feat
-    noise so e.g. 'Tiny Dancer' and 'Tiny Dancer (Remastered)' compare equal."""
+    noise so e.g. 'Tiny Dancer' and 'Tiny Dancer (Remastered)' compare equal.
+    The keyword is matched anywhere inside the parenthetical, not just at the
+    start - real catalogue data has plenty of "(2017 Remaster)" and "(2002
+    Remastered)" (year-prefixed), which a keyword-must-lead pattern misses
+    entirely, leaving near-duplicate reissues uncollapsed."""
     t = (title or "").lower()
     t = re.sub(r"\(feat\.[^)]*\)", "", t)
     t = re.sub(r"\[[^\]]*\]", "", t)
-    t = re.sub(r"\((remaster|remastered|live|deluxe|radio edit|acoustic)[^)]*\)", "", t)
+    t = re.sub(r"\([^)]*\b(?:remaster(?:ed)?|live|deluxe|radio edit|acoustic)\b[^)]*\)", "", t)
     return re.sub(r"[^a-z0-9]+", "", t)
 
 

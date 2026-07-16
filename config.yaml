@@ -58,6 +58,11 @@ taste_playlists:
   candidates_per_playlist: 300
   spine_target: 40
   max_tracks_per_seed_artist: 10
+  # Caps each seed artist's contribution to the discovery half. Without
+  # this, a prolific catalogue (The Weeknd, Coldplay, Fleetwood Mac) fills
+  # nearly the entire 260-track discovery pool on its own, crowding out
+  # every other seed artist in a multi-artist profile.
+  max_deeper_cuts_per_artist: 15
   profiles:
     - name: "Fingerstyle Acoustic Folk"
       seed_artists: [Charlie Cunningham, Nick Mulvey, Roo Panes, José González,

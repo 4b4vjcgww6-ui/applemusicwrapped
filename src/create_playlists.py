@@ -139,19 +139,28 @@ def build_discovery(
     target: int,
     cache: dict,
     used_related_keys: set[str],
+    max_deeper_cuts_per_artist: int,
 ) -> list[tuple[str, str]]:
     seen_keys = set(spine_keys)
     seed_lower = {a.lower() for a in seed_artists}
     deeper_cuts: list[tuple[str, str]] = []
     genre_votes: dict[str, int] = {}
 
+    # Capped per artist - without this, a prolific catalogue (The Weeknd,
+    # Coldplay, Fleetwood Mac) fills nearly the entire discovery pool on its
+    # own at this scale, crowding out every other seed artist in a
+    # multi-artist profile (confirmed against real output: The Weeknd alone
+    # supplied over 100 of 260 discovery slots in "2010s Mainstream Pop").
     for artist in seed_artists:
         try:
             results = itunes_search(artist, cache, limit=200)  # iTunes Search API's documented max
         except requests.exceptions.RequestException as e:
             print(f"  iTunes Search failed for '{artist}': {e}")
             continue
+        artist_count = 0
         for item in results:
+            if artist_count >= max_deeper_cuts_per_artist:
+                break
             item_artist = (item.get("artistName") or "")
             if item_artist.lower() != artist.lower():
                 continue
@@ -166,6 +175,7 @@ def build_discovery(
                 genre_votes[genre] = genre_votes.get(genre, 0) + 1
             seen_keys.add(key)
             deeper_cuts.append((title, item_artist))
+            artist_count += 1
 
     # Related-via-genre: searching a bare genre name works as a plain-text
     # query, not a taxonomy filter - broad genres just return generic current
@@ -310,7 +320,7 @@ def main() -> None:
             remaining = tp_cfg["candidates_per_playlist"] - len(spine)
             discovery = build_discovery(
                 seed_artists, spine_keys, excluded_artists, christmas_keywords, remaining, cache,
-                used_related_keys,
+                used_related_keys, tp_cfg["max_deeper_cuts_per_artist"],
             )
             print(f"  Discovery: {len(discovery)} tracks")
         else:
