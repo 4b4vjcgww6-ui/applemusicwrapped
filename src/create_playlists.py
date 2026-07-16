@@ -42,7 +42,7 @@ import pandas as pd
 import requests
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pipeline import apply_filters, load_config, load_history
+from pipeline import apply_filters, load_config, load_history, normalize_title
 
 ROOT = Path(__file__).resolve().parent.parent
 SEARCH_CACHE_PATH = ROOT / "data" / "itunes_search_cache.json"
@@ -52,15 +52,6 @@ SEARCH_URL = "https://itunes.apple.com/search"
 
 
 # ---------------------------------------------------------------- candidates
-
-def normalize_title(title: str) -> str:
-    """Loose key for de-duplication — strips remaster/live/feat noise."""
-    t = title.lower()
-    t = re.sub(r"\(feat\.[^)]*\)", "", t)
-    t = re.sub(r"\[[^\]]*\]", "", t)
-    t = re.sub(r"\((remaster|remastered|live|deluxe|radio edit|acoustic)[^)]*\)", "", t)
-    return re.sub(r"[^a-z0-9]+", "", t)
-
 
 def load_exclusions(cfg: dict, audit: dict) -> tuple[set[str], set[str]]:
     """(excluded_artists, christmas_title_keywords) — used to keep discovery

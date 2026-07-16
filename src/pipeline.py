@@ -14,6 +14,16 @@ ROOT = Path(__file__).resolve().parent.parent
 TRACK_META_PATH = ROOT / "data" / "track_meta.json"
 
 
+def normalize_title(title: str) -> str:
+    """Loose key for matching/de-duplication — strips remaster/live/feat
+    noise so e.g. 'Tiny Dancer' and 'Tiny Dancer (Remastered)' compare equal."""
+    t = (title or "").lower()
+    t = re.sub(r"\(feat\.[^)]*\)", "", t)
+    t = re.sub(r"\[[^\]]*\]", "", t)
+    t = re.sub(r"\((remaster|remastered|live|deluxe|radio edit|acoustic)[^)]*\)", "", t)
+    return re.sub(r"[^a-z0-9]+", "", t)
+
+
 def load_config() -> dict:
     with open(ROOT / "config.yaml") as f:
         return yaml.safe_load(f)
