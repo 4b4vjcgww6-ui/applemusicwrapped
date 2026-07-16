@@ -50,6 +50,14 @@ TASTE_PROFILE_PATH = ROOT / "output" / "taste_profile.json"
 LOG_PATH = ROOT / "output" / "playlist_creation_log.md"
 SEARCH_URL = "https://itunes.apple.com/search"
 
+# Broad top-level iTunes genres: searching these as a bare text query returns
+# generic current chart hits rather than anything taxonomically related, so
+# they're excluded from the related-artist discovery step (see build_discovery).
+GENERIC_GENRES = {
+    "Pop", "Alternative", "Rock", "Dance", "Electronic", "R&B/Soul",
+    "Hip-Hop/Rap", "Hip-Hop", "Dance/Electronic",
+}
+
 
 # ---------------------------------------------------------------- candidates
 
@@ -158,9 +166,19 @@ def build_discovery(
             seen_keys.add(key)
             deeper_cuts.append((title, item_artist))
 
+    # Related-via-genre: searching a bare genre name works as a plain-text
+    # query, not a taxonomy filter - broad top-level genres (Pop,
+    # Alternative, Rock...) just return generic current chart hits,
+    # identically, regardless of which profile asked (confirmed against
+    # real output: the same handful of unrelated tracks showed up as
+    # "related" for three different profiles that all happened to vote a
+    # generic genre top). Narrower genre tags (Singer/Songwriter, Alternative
+    # Folk, Indie Rock...) stay much closer to genuinely on-brand results, so
+    # only search those.
     related: list[tuple[str, str]] = []
-    if genre_votes:
-        top_genres = sorted(genre_votes, key=genre_votes.get, reverse=True)[:2]
+    specific_genres = [g for g in genre_votes if g not in GENERIC_GENRES]
+    if specific_genres:
+        top_genres = sorted(specific_genres, key=genre_votes.get, reverse=True)[:2]
         for genre in top_genres:
             try:
                 results = itunes_search(genre, cache, limit=25)
@@ -180,9 +198,14 @@ def build_discovery(
                 seen_keys.add(key)
                 related.append((title, item_artist))
 
-    # Interleave: prefer deeper cuts (safer bets, same proven artists) before
-    # more speculative related-genre picks, but keep both represented.
-    combined = deeper_cuts[: int(target * 0.6) + 1] + related[: int(target * 0.4) + 1]
+    # Deeper cuts are the reliable half - same proven artists, always
+    # relevant. Related-genre picks are more speculative and sometimes
+    # unavailable (no specific-enough genre this round); when that happens,
+    # deeper cuts backfill the rest of the target instead of leaving slots
+    # empty.
+    related_slice = related[: int(target * 0.4) + 1]
+    deeper_slice = deeper_cuts[: target - len(related_slice)]
+    combined = deeper_slice + related_slice
     return [
         (t, a) for t, a in combined
         if a not in excluded_artists
