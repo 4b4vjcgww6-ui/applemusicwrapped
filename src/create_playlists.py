@@ -48,6 +48,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SEARCH_CACHE_PATH = ROOT / "data" / "itunes_search_cache.json"
 TASTE_PROFILE_PATH = ROOT / "output" / "taste_profile.json"
 LOG_PATH = ROOT / "output" / "playlist_creation_log.md"
+MISSES_JSON_PATH = ROOT / "output" / "playlist_misses.json"
 SEARCH_URL = "https://itunes.apple.com/search"
 
 # Broad top-level iTunes genres: searching these as a bare text query returns
@@ -305,6 +306,7 @@ def main() -> None:
     cache = load_search_cache()
     log_lines = ["# Playlist creation log\n"]
     used_related_keys: set[str] = set()
+    misses_by_profile: dict[str, list[list[str]]] = {}
 
     for profile in tp_cfg["profiles"]:
         name = profile["name"]
@@ -360,11 +362,19 @@ def main() -> None:
             log_lines.append("\n**Misses (not in your local library — add manually if wanted):**\n")
             for m in misses:
                 log_lines.append(f"- {m[len('MISS: '):]}")
+            # artist - title, split on the first " - " (matches Track Description's own convention)
+            misses_by_profile[name] = [
+                m[len("MISS: "):].split(" - ", 1) for m in misses
+            ]
         print(f"  Created '{playlist_name}': {len(added)} added, {len(misses)} misses")
 
     save_search_cache(cache)
     LOG_PATH.write_text("\n".join(log_lines))
     print(f"\nWrote {LOG_PATH}")
+
+    if misses_by_profile and not args.dry_run:
+        MISSES_JSON_PATH.write_text(json.dumps(misses_by_profile, indent=2))
+        print(f"Wrote {MISSES_JSON_PATH} (machine-readable misses, for src/catalog_add.py)")
 
 
 if __name__ == "__main__":
