@@ -4,16 +4,39 @@ Built from `output/taste_profile.json` (515 core artists, 40 phase artists,
 out of 2,305 with any real plays, from the 15,823-play filtered dataset —
 846 hours across 11 years).
 
-**A caveat before the profiles**: genre enrichment (`src/enrich.py`) couldn't
-run in this environment — `itunes.apple.com` isn't reachable from this
-session's network policy, so `data/track_meta.json` doesn't exist yet. The
-genre labels below ("fingerstyle folk", "Brit-alt", etc.) are my own
-characterisation of these artists' sound, not verified iTunes genre tags.
-Every artist, track, and number cited is real and pulled straight from your
-play data — only the genre *label* is an approximation. Once you run
-`enrich.py` locally and send back `track_meta.json`, re-run `src/taste.py`
-and I'll cross-check these labels against the actual genre tags and correct
-anything that doesn't match.
+**Update, cross-checked against real genre data**: `enrich.py` has now run
+(locally, with real internet access) and the genre labels below have been
+checked against actual iTunes genre tags. The headline result: **no seed
+artist in any of the six profiles came back flagged as ambient/sleep
+residual** — the clusters hold up. But iTunes' genre taxonomy is coarser
+than my style labels (mostly `Alternative`/`Pop`/`Rock`/`Dance`/`R&B/Soul`,
+no `Britpop` or `fingerstyle` categories exist at all), so treat the profile
+*names* below as style descriptors, not genre matches — that was always the
+intent, but now it's confirmed rather than assumed. Specific corrections:
+
+- **Illy** is tagged `Hip-Hop`, not close to the rest of the "Aussie
+  Singer-Songwriter" cluster (`Alternative`/`Pop`/`Singer/Songwriter`) — that
+  profile is really "artists you follow because they're Australian," not a
+  genre-consistent cluster. Worth knowing if you want genre-tighter
+  playlists later.
+- **The Weeknd** is `R&B/Soul`, not `Pop` — same story for "2010s Mainstream
+  Pop": it's an era/chart-mainstream grouping, not a genre-pure one.
+- No Oasis/Ocean Colour Scene/Coldplay/Keane track came back tagged
+  `Britpop` — iTunes doesn't use that category for any of them (Oasis is
+  `Indie Rock`, Ocean Colour Scene and The Verve are both `Pop`). The
+  "anthemic Brit-alt" label was a style call, not something iTunes' taxonomy
+  would ever produce on its own.
+- **The Franklin Electric** and **Capital Cities** — both seed artists in
+  their respective profiles — came back with no genre at all (a real
+  coverage gap in enrichment, not a misclassification).
+- The Christmas-genre pipeline bug (it was checking for `genre == "Holiday"`,
+  but iTunes actually uses `"Christmas"` and several `"Christmas: *"`
+  subtypes) has been fixed in `src/pipeline.py` — re-run `run_wrapped.py` to
+  pick up the extra reclassified plays.
+
+Everything below is otherwise unchanged from the original draft — every
+artist/track/number cited was already real, pulled from your actual play
+data.
 
 "Core" = spread across ≥3 calendar years with no single year holding more
 than 60% of that artist's plays (sustained interest). "Phase" = a
