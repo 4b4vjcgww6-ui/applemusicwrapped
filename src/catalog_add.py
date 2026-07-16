@@ -46,6 +46,8 @@ Usage:
   python3 src/catalog_add.py
       # Every miss, every profile. Only run this once --limit 3 has worked.
 """
+from __future__ import annotations  # str | None annotations need this on Python < 3.10
+
 import argparse
 import json
 import subprocess
