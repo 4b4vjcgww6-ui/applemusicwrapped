@@ -147,7 +147,7 @@ def build_discovery(
 
     for artist in seed_artists:
         try:
-            results = itunes_search(artist, cache, limit=25)
+            results = itunes_search(artist, cache, limit=200)  # iTunes Search API's documented max
         except requests.exceptions.RequestException as e:
             print(f"  iTunes Search failed for '{artist}': {e}")
             continue
@@ -185,10 +185,10 @@ def build_discovery(
     related: list[tuple[str, str]] = []
     specific_genres = [g for g in genre_votes if g not in GENERIC_GENRES]
     if specific_genres:
-        top_genres = sorted(specific_genres, key=genre_votes.get, reverse=True)[:2]
+        top_genres = sorted(specific_genres, key=genre_votes.get, reverse=True)[:3]
         for genre in top_genres:
             try:
-                results = itunes_search(genre, cache, limit=25)
+                results = itunes_search(genre, cache, limit=100)
             except requests.exceptions.RequestException as e:
                 print(f"  iTunes Search failed for genre '{genre}': {e}")
                 continue

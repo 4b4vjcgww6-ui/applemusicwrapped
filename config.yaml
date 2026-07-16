@@ -52,9 +52,12 @@ christmas_filter:
 # from taste_profile.json are excluded from every profile's discovery pool
 # automatically, not listed as seeds anywhere below.
 taste_playlists:
-  candidates_per_playlist: 28
-  spine_target: 12
-  max_tracks_per_seed_artist: 4
+  # 300 candidates targets ~100+ actual playlist adds at the observed
+  # 46-61% local-library match rate, with margin since deeper/more obscure
+  # discovery picks tend to match less often than proven favourites.
+  candidates_per_playlist: 300
+  spine_target: 40
+  max_tracks_per_seed_artist: 10
   profiles:
     - name: "Fingerstyle Acoustic Folk"
       seed_artists: [Charlie Cunningham, Nick Mulvey, Roo Panes, José González,
