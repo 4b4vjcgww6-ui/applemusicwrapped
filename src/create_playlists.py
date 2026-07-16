@@ -138,6 +138,7 @@ def build_discovery(
     christmas_keywords: set[str],
     target: int,
     cache: dict,
+    used_related_keys: set[str],
 ) -> list[tuple[str, str]]:
     seen_keys = set(spine_keys)
     seed_lower = {a.lower() for a in seed_artists}
@@ -167,14 +168,20 @@ def build_discovery(
             deeper_cuts.append((title, item_artist))
 
     # Related-via-genre: searching a bare genre name works as a plain-text
-    # query, not a taxonomy filter - broad top-level genres (Pop,
-    # Alternative, Rock...) just return generic current chart hits,
-    # identically, regardless of which profile asked (confirmed against
-    # real output: the same handful of unrelated tracks showed up as
-    # "related" for three different profiles that all happened to vote a
-    # generic genre top). Narrower genre tags (Singer/Songwriter, Alternative
-    # Folk, Indie Rock...) stay much closer to genuinely on-brand results, so
-    # only search those.
+    # query, not a taxonomy filter - broad genres just return generic current
+    # chart hits, identically, regardless of which profile asked. Excluding
+    # the broadest (GENERIC_GENRES) helps, but even a narrower-sounding genre
+    # like "Singer/Songwriter" can still collapse to the same "canonical
+    # greatest hits" result for any profile that lands on it (confirmed
+    # against real output - three unrelated profiles all got the identical
+    # Paul Simon/Olafur Arnalds/LP block from that exact genre). The real
+    # fix is this: used_related_keys is shared across every profile in this
+    # run, so once a candidate has been used as a "related" pick for one
+    # profile, no later profile can reuse it - whatever the cause, a repeat
+    # is never actually profile-specific "related" content. Profiles
+    # processed earlier (see config.yaml's profile order) get first claim;
+    # later ones fall back to more deeper cuts instead, which is a better
+    # trade than a duplicate.
     related: list[tuple[str, str]] = []
     specific_genres = [g for g in genre_votes if g not in GENERIC_GENRES]
     if specific_genres:
@@ -191,11 +198,12 @@ def build_discovery(
                     continue
                 title = item.get("trackName") or ""
                 key = normalize_title(title)
-                if not title or key in seen_keys:
+                if not title or key in seen_keys or key in used_related_keys:
                     continue
                 if is_christmas_titled(title, christmas_keywords):
                     continue
                 seen_keys.add(key)
+                used_related_keys.add(key)
                 related.append((title, item_artist))
 
     # Deeper cuts are the reliable half - same proven artists, always
@@ -286,6 +294,7 @@ def main() -> None:
 
     cache = load_search_cache()
     log_lines = ["# Playlist creation log\n"]
+    used_related_keys: set[str] = set()
 
     for profile in tp_cfg["profiles"]:
         name = profile["name"]
@@ -300,7 +309,8 @@ def main() -> None:
         if not args.no_discovery:
             remaining = tp_cfg["candidates_per_playlist"] - len(spine)
             discovery = build_discovery(
-                seed_artists, spine_keys, excluded_artists, christmas_keywords, remaining, cache
+                seed_artists, spine_keys, excluded_artists, christmas_keywords, remaining, cache,
+                used_related_keys,
             )
             print(f"  Discovery: {len(discovery)} tracks")
         else:
