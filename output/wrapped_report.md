@@ -2,6 +2,9 @@
 
 **Filter audit:** removed 71,813 sleep plays (176 artists), 906 focus-music plays (5 artists) and 181 blocked-artist plays. Remaining: 15,823 plays, ~846 hours. Christmas plays held separately: 1,362.
 
+
+**Genre filter:** not applied — `data/track_meta.json` not found. Run `python3 src/enrich.py` (needs internet) then re-run this script to add the genre-based filter layer and the genre sections below.
+
 ## Listening by year
 
 |   year |   plays |   hours |   unique_tracks |   unique_artists |
@@ -129,3 +132,7 @@
 | Darlene Love - A Marshmallow World                          |           20 |
 | The Ronettes - Sleigh Ride                                  |           20 |
 | Low - Just Like Christmas                                   |           19 |
+
+## Genre dimension — pending
+
+Run `python3 src/enrich.py` to populate `data/track_meta.json`, then re-run this script.

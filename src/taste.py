@@ -15,10 +15,9 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pipeline import apply_filters, load_config, load_history
+from pipeline import apply_filters, attach_genre, load_config, load_history, load_track_meta
 
 ROOT = Path(__file__).resolve().parent.parent
-META_PATH = ROOT / "data" / "track_meta.json"
 OUT_PATH = ROOT / "output" / "taste_profile.json"
 
 CORE_MIN_YEARS = 3          # spread across at least this many calendar years
@@ -26,17 +25,34 @@ CORE_MAX_YEAR_SHARE = 0.60  # no single year may hold more than this share of pl
 PHASE_MIN_PLAYS = 15        # below this, a short-window artist is noise, not a phase
 
 
-def load_track_meta() -> dict:
-    if META_PATH.exists():
-        return json.loads(META_PATH.read_text())
-    return {}
-
-
-def attach_genre(df: pd.DataFrame, meta: dict) -> pd.DataFrame:
+def attach_era(df: pd.DataFrame, meta: dict) -> pd.DataFrame:
+    """Release decade from enrichment metadata's releaseDate (e.g. '2016-07-01...' -> 2010)."""
     df = df.copy()
     tid = df["Track Identifier"].astype("Int64").astype(str)
-    df["genre"] = tid.map(lambda i: (meta.get(i) or {}).get("genre"))
+
+    def decade(i):
+        entry = meta.get(i) or {}
+        rd = entry.get("release_date")
+        if not rd:
+            return None
+        try:
+            year = int(str(rd)[:4])
+        except ValueError:
+            return None
+        return (year // 10) * 10
+
+    df["era_decade"] = tid.map(decade)
     return df
+
+
+def dominant_by_play(df: pd.DataFrame, col: str) -> pd.Series:
+    """Most common value of `col` per artist, weighted by Play Count."""
+    sub = df.dropna(subset=[col])
+    if sub.empty:
+        return pd.Series(dtype=object)
+    weighted = sub.groupby(["artist", col])["Play Count"].sum().reset_index()
+    idx = weighted.groupby("artist")["Play Count"].idxmax()
+    return weighted.loc[idx].set_index("artist")[col]
 
 
 def classify(row) -> str:
@@ -138,8 +154,10 @@ def prof_to_records(prof: pd.DataFrame, top_tracks: dict) -> list[dict]:
             "classification": r.classification,
             "intensity_tier": str(r.intensity_tier),
             "likely_ambient_residual": bool(r.likely_ambient_residual),
-            "genre": r.genre if "genre" in prof.columns else None,
-            "era_decade": None,  # populated once release-date enrichment exists
+            "genre": r.genre if "genre" in prof.columns and pd.notna(r.genre) else None,
+            "era_decade": (
+                int(r.era_decade) if "era_decade" in prof.columns and pd.notna(r.era_decade) else None
+            ),
             "top_tracks": top_tracks.get(artist, []),
         })
     return records
@@ -154,10 +172,15 @@ def main() -> None:
     enriched = bool(meta)
     if enriched:
         clean = attach_genre(clean, meta)
+        clean = attach_era(clean, meta)
     else:
-        clean = clean.assign(genre=None)
+        clean = clean.assign(genre=None, era_decade=None)
 
     prof = artist_profile(clean)
+    if enriched:
+        prof["genre"] = dominant_by_play(clean, "genre").reindex(prof.index)
+        prof["era_decade"] = dominant_by_play(clean, "era_decade").reindex(prof.index)
+
     top_tracks = top_tracks_by_artist(clean, list(prof.index), n=3)
     records = prof_to_records(prof, top_tracks)
 

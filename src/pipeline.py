@@ -1,3 +1,4 @@
+import json
 import re
 """Music Wrapped pipeline: load, filter, and analyse Apple Music play history.
 
@@ -10,6 +11,7 @@ import pandas as pd
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+TRACK_META_PATH = ROOT / "data" / "track_meta.json"
 
 
 def load_config() -> dict:
@@ -107,6 +109,7 @@ def apply_filters(df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, dict]:
         clean = clean[~clean["is_christmas"]].copy()
     audit = {
         "sleep_artists": len(sleep_artists),
+        "sleep_artists_list": sorted(sleep_artists),
         "sleep_plays_removed": int(df.loc[mask_sleep, "Play Count"].sum()),
         "focus_artists": sorted(focus_artists),
         "focus_plays_removed": int(df.loc[mask_focus, "Play Count"].sum()),
@@ -116,6 +119,90 @@ def apply_filters(df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, dict]:
         "hours_remaining": round(clean["Play Duration Milliseconds"].sum() / 3.6e6),
     }
     return clean, audit, christmas
+
+
+def load_track_meta() -> dict:
+    """Cached iTunes Lookup metadata from src/enrich.py, keyed by str(Track Identifier).
+    Returns {} if enrich.py hasn't been run yet — callers should treat that as
+    "genre dimension not available" rather than an error."""
+    if TRACK_META_PATH.exists():
+        return json.loads(TRACK_META_PATH.read_text())
+    return {}
+
+
+def attach_genre(df: pd.DataFrame, meta: dict) -> pd.DataFrame:
+    df = df.copy()
+    tid = df["Track Identifier"].astype("Int64").astype(str)
+    df["genre"] = tid.map(lambda i: (meta.get(i) or {}).get("genre"))
+    return df
+
+
+def apply_genre_layer(
+    clean: pd.DataFrame, christmas: pd.DataFrame, cfg: dict, meta: dict
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """Additional filter layer, run only once data/track_meta.json exists.
+    Two jobs, per README: (1) excluded_genres catches ambient/sleep/etc.
+    residual the behavioural filters missed; (2) genre == 'Holiday' is
+    authoritative for Christmas tagging, catching stray tracks the
+    keyword/seasonal heuristic in tag_christmas() missed. Never touches
+    `clean`/`christmas` when meta is empty, so the pre-enrichment validated
+    checkpoint numbers are reproduced exactly until enrichment actually runs.
+    """
+    if not meta:
+        return clean, christmas, {}
+
+    tagged = attach_genre(clean, meta)
+
+    holiday_mask = tagged["genre"] == "Holiday"
+    reclassified = tagged[holiday_mask].copy()
+    tagged = tagged[~holiday_mask]
+    if len(reclassified):
+        reclassified["is_christmas"] = True
+        christmas = pd.concat([christmas, reclassified], ignore_index=True)
+
+    excluded_genres = set(cfg.get("excluded_genres", []))
+    excl_mask = tagged["genre"].isin(excluded_genres)
+    removed = tagged[excl_mask].copy()
+    kept = tagged[~excl_mask].copy()
+
+    by_genre = removed.groupby("genre")["Play Count"].sum().sort_values(ascending=False)
+    detail = (
+        removed.groupby(["artist", "genre"])["Play Count"].sum()
+        .sort_values(ascending=False)
+        .reset_index()
+        .rename(columns={"Play Count": "plays"})
+    )
+    audit = {
+        "holiday_reclassified_plays": int(reclassified["Play Count"].sum()) if len(reclassified) else 0,
+        "holiday_reclassified_tracks": sorted(reclassified["Track Description"].unique().tolist()) if len(reclassified) else [],
+        "genre_excluded_plays": int(removed["Play Count"].sum()),
+        "genre_excluded_artist_count": removed["artist"].nunique(),
+        "genre_excluded_by_genre": by_genre.to_dict(),
+        "genre_excluded_detail": detail.to_dict(orient="records"),
+    }
+    return kept, christmas, audit
+
+
+def genre_stats(df: pd.DataFrame, top_n: int = 15) -> dict:
+    """Genre dimension for the report: requires df already has a 'genre' column
+    (i.e. it went through attach_genre / apply_genre_layer)."""
+    tagged = df.dropna(subset=["genre"])
+    out = {}
+    out["top_genres_lifetime"] = (
+        tagged.groupby("genre")["Play Count"].sum().sort_values(ascending=False).head(top_n)
+    )
+    out["top_genre_per_year"] = (
+        tagged.groupby(["year", "genre"])["Play Count"].sum()
+        .reset_index()
+        .sort_values("Play Count", ascending=False)
+        .groupby("year")
+        .first()
+        .sort_index()
+    )
+    out["genre_by_year"] = (
+        tagged.groupby(["year", "genre"])["Play Count"].sum().unstack(fill_value=0)
+    )
+    return out
 
 
 def wrapped_stats(df: pd.DataFrame, top_n: int = 20) -> dict:
