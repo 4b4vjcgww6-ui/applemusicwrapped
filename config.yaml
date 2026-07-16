@@ -42,3 +42,40 @@ christmas_filter:
              snowman, rudolph, "silent night", "winter wonderland", december]
   seasonal_share: 0.70
   min_plays: 8
+
+# Phase C: playlist generation (src/create_playlists.py). Each profile's
+# seed_artists come from output/taste_profiles.md — edit here (not in code)
+# to tune a playlist without touching the script. candidates_per_playlist
+# is the target list length (spine + discovery); spine_target caps how many
+# proven-favourite tracks lead each playlist before discovery candidates
+# fill the rest. Personal Effects and the likely_ambient_residual artists
+# from taste_profile.json are excluded from every profile's discovery pool
+# automatically, not listed as seeds anywhere below.
+taste_playlists:
+  candidates_per_playlist: 28
+  spine_target: 12
+  max_tracks_per_seed_artist: 4
+  profiles:
+    - name: "Fingerstyle Acoustic Folk"
+      seed_artists: [Charlie Cunningham, Nick Mulvey, Roo Panes, José González,
+                      The Franklin Electric, "#1 Dads", Jack Savoretti,
+                      Hollow Coves, Sons Of The East]
+    - name: "Anthemic Brit-Alt"
+      seed_artists: [Coldplay, Keane, Snow Patrol, Bastille, The Verve, Kodaline,
+                      The Script, Feeder, You Me At Six, Kaiser Chiefs, James Bay,
+                      Mumford & Sons, Gerry Cinnamon, Oasis, Ocean Colour Scene]
+    - name: "Aussie Singer-Songwriter"
+      seed_artists: [The Rubens, Vance Joy, Harrison Storm, Amy Shark, Illy,
+                      Gang of Youths, Dean Lewis, Birds of Tokyo]
+    - name: "Classic and Legacy Rock-Pop"
+      seed_artists: [Fleetwood Mac, Elton John, Matchbox Twenty, Madonna, ABBA,
+                      Kate Bush, Green Day]
+    - name: "2010s Mainstream Pop"
+      seed_artists: [The Weeknd, The Chainsmokers, Kygo, Ariana Grande,
+                      Taylor Swift, Dua Lipa, Calvin Harris, Avicii, Katy Perry,
+                      Sia, Justin Bieber, Shawn Mendes]
+    - name: "Atmospheric Synth-Pop"
+      seed_artists: [The Neighbourhood, Glass Animals, Future Islands,
+                      Empire Of The Sun, Foster the People, Young the Giant,
+                      Milky Chance, St. Lucia, Years & Years, The Temper Trap,
+                      Capital Cities, The 1975]

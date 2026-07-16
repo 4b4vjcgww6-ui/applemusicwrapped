@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 data/*.csv
 data/track_meta.json
+data/itunes_search_cache.json
