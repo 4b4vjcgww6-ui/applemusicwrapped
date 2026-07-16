@@ -142,18 +142,24 @@ def apply_genre_layer(
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Additional filter layer, run only once data/track_meta.json exists.
     Two jobs, per README: (1) excluded_genres catches ambient/sleep/etc.
-    residual the behavioural filters missed; (2) genre == 'Holiday' is
+    residual the behavioural filters missed; (2) a Christmas-genre tag is
     authoritative for Christmas tagging, catching stray tracks the
     keyword/seasonal heuristic in tag_christmas() missed. Never touches
     `clean`/`christmas` when meta is empty, so the pre-enrichment validated
     checkpoint numbers are reproduced exactly until enrichment actually runs.
+
+    iTunes' actual genre string is "Christmas" (plus subtypes like
+    "Christmas: Pop", "Christmas: Jazz", "Christmas: Country",
+    "Christmas: Children's", "Christmas: Classic") rather than "Holiday" as
+    the README assumed - matched with startswith() to catch all subtypes
+    without also matching unrelated genres like "Classic Christian".
     """
     if not meta:
         return clean, christmas, {}
 
     tagged = attach_genre(clean, meta)
 
-    holiday_mask = tagged["genre"] == "Holiday"
+    holiday_mask = tagged["genre"].str.startswith("Christmas", na=False)
     reclassified = tagged[holiday_mask].copy()
     tagged = tagged[~holiday_mask]
     if len(reclassified):
