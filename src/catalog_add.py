@@ -3,27 +3,29 @@ library) to already-created [Wrapped] playlists, closing the gap left by
 create_playlists.py's misses.
 
 Why this exists: Music.app's AppleScript dictionary has no documented verb
-for "add this catalog track (by ID) to my library" - `duplicate <track> to
+for "add this catalog track (by ID) to a playlist" - `duplicate <track> to
 <playlist>` only works on tracks you already have a reference to (your local
-library). So this drives the UI instead, via System Events: open a direct
-link to the catalog track, then hunt the accessibility tree for something
-that looks like an "Add" button and click it. Once (if) that lands the track
-in your library, it re-runs create_playlists.py's own proven
-library-search-and-add-to-playlist logic to do the actual playlist
-placement - so only the "add to library" step relies on fragile UI
-automation; getting it into the right playlist reuses code that's already
-tested and working.
+library). So this drives the UI instead, via System Events.
 
-This was written with no macOS access to test against, so the UI-hunting
-heuristic is a best guess, not a verified path. Expect it to need at least
-one round of debugging. Two things make that debugging cheap instead of
-painful:
+The toolbar's "Add to Library" button (visible on a catalog album page) adds
+the *whole album* - not what's wanted when only one track from it is a
+candidate. Real per-track menu data showed the fix: each track row has its
+own "More" (...) button whose context menu has an "Add to Playlist" item
+with a submenu listing every playlist by name, including all six [Wrapped]
+ones. So the flow is: open a direct link to the catalog track -> click the
+target row's More button -> click "Add to Playlist" -> click the specific
+playlist name. Scoped to exactly one track, exactly one playlist, no
+whole-album side effect and no separate library-add-then-search pass needed.
+
+This was written with no macOS access to test against, so it was built in
+stages against real diagnostic data rather than guessed in one shot - see
+git history for the two rounds of --inspect / --inspect-menu output that
+shaped it. Two things make ongoing debugging cheap instead of painful:
   - --limit caps how many tracks it attempts, so you're not waiting through
-    hundreds of failures before finding out it doesn't work.
-  - --inspect dumps the real accessibility tree for one track to a file
-    instead of attempting to click anything - if the heuristic click isn't
-    working, send me that dump and I can target the actual UI precisely
-    instead of guessing again.
+    hundreds of failures before finding out something's off.
+  - --inspect and --inspect-menu dump the real accessibility tree instead of
+    attempting to click anything, for diagnosing a specific step in
+    isolation if the full flow doesn't work end-to-end.
 
 Requires:
   - macOS, Music.app open and signed in to Apple Music
@@ -36,8 +38,12 @@ Requires:
 Usage:
   python3 src/catalog_add.py --inspect
       # No clicking. Opens one track, dumps its accessibility tree to
-      # output/catalog_add_inspect.txt. Run this first if the real attempt
-      # below doesn't work.
+      # output/catalog_add_inspect.txt.
+
+  python3 src/catalog_add.py --inspect-menu
+      # Clicks one track's row-level More button, dumps the menu that
+      # appears (still no further clicking) to
+      # output/catalog_add_inspect_menu.txt.
 
   python3 src/catalog_add.py --profile "Fingerstyle Acoustic Folk" --limit 3
       # Try the real thing on just 3 tracks from one profile - sanity-check
@@ -60,7 +66,6 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent))
 from create_playlists import (
     as_escape,
-    build_applescript,
     itunes_search,
     load_search_cache,
     normalize_title,
@@ -223,17 +228,27 @@ tell application "System Events"
 end tell
 '''
 
-ADD_TO_LIBRARY_SCRIPT = '''
+# Real per-track menu data (see git history / catalog_add_inspect_menu.txt)
+# confirmed the per-row More button's context menu has its own "Add to
+# Playlist" item (AXMenuItem, matched by *name*, not description like the
+# toolbar button) with a submenu listing every playlist including all six
+# [Wrapped] ones by exact name. This adds straight to the one target
+# playlist, scoped to just the one track - no whole-album side effect like
+# the toolbar's "Add to Library" button has, and no separate library-add +
+# re-search pass needed either.
+ADD_TO_PLAYLIST_SCRIPT = '''
 tell application "Music"
     activate
     open location "{url}"
 end tell
 delay 4
 tell application "System Events"
+    set foundRow to false
+    set moreClicked to false
+    set clickError to ""
     tell process "Music"
         try
-            set frontWin to front window
-            set allElements to entire contents of frontWin
+            set allElements to entire contents of front window
             repeat with elem in allElements
                 set elemRole to ""
                 set elemDesc to ""
@@ -243,17 +258,82 @@ tell application "System Events"
                 try
                     set elemDesc to (description of elem) as string
                 end try
-                if elemRole is "AXButton" and (elemDesc is "Add to Library" or elemDesc is "Add") then
+                if not foundRow and elemDesc is "{title}" then
+                    set foundRow to true
+                end if
+                if foundRow and not moreClicked and elemRole is "AXButton" and elemDesc is "More" then
                     click elem
-                    delay 1.5
-                    return "CLICKED: " & elemDesc
+                    set moreClicked to true
+                    exit repeat
                 end if
             end repeat
-            return "NOT_FOUND"
         on error errMsg
-            return "ERROR: " & errMsg
+            set clickError to errMsg
         end try
     end tell
+    if clickError is not "" then
+        return "ERROR finding/clicking row's More button: " & clickError
+    end if
+    if not moreClicked then
+        return "MORE_BUTTON_NOT_FOUND_FOR_ROW"
+    end if
+    delay 1
+
+    set addToPlaylistClicked to false
+    try
+        set menuElements to entire contents of process "Music"
+        repeat with elem in menuElements
+            set elemRole to ""
+            set elemName to ""
+            try
+                set elemRole to (role of elem) as string
+            end try
+            if elemRole is "AXMenuItem" then
+                try
+                    set elemName to (name of elem) as string
+                end try
+                if elemName is "Add to Playlist" then
+                    click elem
+                    set addToPlaylistClicked to true
+                    exit repeat
+                end if
+            end if
+        end repeat
+    on error errMsg2
+        return "ERROR finding Add to Playlist menu item: " & errMsg2
+    end try
+    if not addToPlaylistClicked then
+        return "ADD_TO_PLAYLIST_MENU_ITEM_NOT_FOUND"
+    end if
+    delay 1
+
+    set playlistClicked to false
+    try
+        set submenuElements to entire contents of process "Music"
+        repeat with elem in submenuElements
+            set elemRole to ""
+            set elemName to ""
+            try
+                set elemRole to (role of elem) as string
+            end try
+            if elemRole is "AXMenuItem" then
+                try
+                    set elemName to (name of elem) as string
+                end try
+                if elemName is "{playlist_name}" then
+                    click elem
+                    set playlistClicked to true
+                    exit repeat
+                end if
+            end if
+        end repeat
+    on error errMsg3
+        return "ERROR finding target playlist in submenu: " & errMsg3
+    end try
+    if not playlistClicked then
+        return "TARGET_PLAYLIST_NOT_FOUND_IN_SUBMENU"
+    end if
+    return "ADDED_TO_PLAYLIST"
 end tell
 '''
 
@@ -310,8 +390,10 @@ def inspect_menu_one(cache: dict, misses_by_profile: dict) -> None:
     print("No misses found to inspect.")
 
 
-def add_to_library(artist: str, title: str, url: str) -> str:
-    script = ADD_TO_LIBRARY_SCRIPT.format(url=url)
+def add_to_playlist(title: str, url: str, playlist_name: str) -> str:
+    script = ADD_TO_PLAYLIST_SCRIPT.format(
+        url=url, title=as_escape(title), playlist_name=as_escape(playlist_name)
+    )
     try:
         return run_applescript(script)
     except RuntimeError as e:
@@ -361,39 +443,19 @@ def main() -> None:
         todo = misses[: args.limit] if args.limit else misses
         print(f"\n=== {profile} — attempting {len(todo)} of {len(misses)} misses ===")
 
-        added_to_library: list[tuple[str, str]] = []
+        placed = 0
         for artist, title in todo:
             url = find_catalog_url(artist, title, cache)
             if not url:
                 print(f"  [no catalog match] {artist} - {title}")
                 continue
-            result = add_to_library(artist, title, url)
+            result = add_to_playlist(title, url, playlist_name)
             print(f"  {result} — {artist} - {title}")
-            if result.startswith("CLICKED"):
-                added_to_library.append((title, artist))
+            if result == "ADDED_TO_PLAYLIST":
+                placed += 1
             time.sleep(1)
 
-        if not added_to_library:
-            print(f"  Nothing added to library for '{profile}' this pass.")
-            continue
-
-        print(f"  Attempted to library-add {len(added_to_library)} tracks — "
-              f"now placing them into '{playlist_name}' via the proven library-search path...")
-        script = build_applescript(playlist_name, added_to_library)
-        # This profile's playlist already exists (misses only come from a real
-        # run), so the "skip if exists" branch in build_applescript's script
-        # would bail immediately - strip that guard for this follow-up pass by
-        # rebuilding a version that assumes the playlist exists and just adds.
-        script = script.replace(
-            'if exists playlist playlistName then\n        return "SKIPPED_EXISTING_PLAYLIST"\n    end if\n    make new playlist with properties {name:playlistName}\n',
-            "",
-        )
-        try:
-            output = run_applescript(script)
-            added = [l for l in output.splitlines() if l.startswith("ADDED: ")]
-            print(f"  Placed {len(added)} of {len(added_to_library)} into '{playlist_name}'.")
-        except RuntimeError as e:
-            print(f"  ERROR placing tracks into playlist: {e}")
+        print(f"  Placed {placed} of {len(todo)} into '{playlist_name}'.")
 
     save_search_cache(cache)
 
