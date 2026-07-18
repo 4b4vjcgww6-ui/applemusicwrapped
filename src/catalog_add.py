@@ -154,9 +154,10 @@ tell application "Music"
 end tell
 delay 4
 tell application "System Events"
+    set foundRow to false
+    set moreClicked to false
+    set clickError to ""
     tell process "Music"
-        set foundRow to false
-        set moreClicked to false
         try
             set allElements to entire contents of front window
             repeat with elem in allElements
@@ -178,40 +179,47 @@ tell application "System Events"
                 end if
             end repeat
         on error errMsg
-            return "ERROR finding/clicking row's More button: " & errMsg
+            set clickError to errMsg
         end try
-        if not moreClicked then
-            return "MORE_BUTTON_NOT_FOUND_FOR_ROW (row title match failed, or no More button after it)"
-        end if
-        delay 1
-        set out to ""
-        try
-            set menuElements to entire contents of (process "Music")
-            repeat with elem in menuElements
-                set elemRole to ""
-                set elemName to ""
-                set elemDesc to ""
-                try
-                    set elemRole to (role of elem) as string
-                end try
-                if elemRole contains "Menu" then
-                    try
-                        set elemName to (name of elem) as string
-                    end try
-                    try
-                        set elemDesc to (description of elem) as string
-                    end try
-                    set out to out & elemRole & " | name=" & elemName & " | desc=" & elemDesc & linefeed
-                end if
-            end repeat
-        on error errMsg2
-            set out to "ERROR dumping menu: " & errMsg2
-        end try
-        if out is "" then
-            set out to "No menu-role elements found after clicking More - the menu may live outside the process's own tree, or the click didn't open one."
-        end if
-        return out
     end tell
+    -- entire contents of process "Music" must be called out here, one level
+    -- up from `tell process "Music"` above - calling it from inside that
+    -- block resolves to "process Music of process Music" and errors out
+    -- (confirmed against a real run: "Can't get process Music of process Music").
+    if clickError is not "" then
+        return "ERROR finding/clicking row's More button: " & clickError
+    end if
+    if not moreClicked then
+        return "MORE_BUTTON_NOT_FOUND_FOR_ROW (row title match failed, or no More button after it)"
+    end if
+    delay 1
+    set out to ""
+    try
+        set menuElements to entire contents of process "Music"
+        repeat with elem in menuElements
+            set elemRole to ""
+            set elemName to ""
+            set elemDesc to ""
+            try
+                set elemRole to (role of elem) as string
+            end try
+            if elemRole contains "Menu" then
+                try
+                    set elemName to (name of elem) as string
+                end try
+                try
+                    set elemDesc to (description of elem) as string
+                end try
+                set out to out & elemRole & " | name=" & elemName & " | desc=" & elemDesc & linefeed
+            end if
+        end repeat
+    on error errMsg2
+        set out to "ERROR dumping menu: " & errMsg2
+    end try
+    if out is "" then
+        set out to "No menu-role elements found after clicking More - the menu may live outside the process's own tree, or the click didn't open one."
+    end if
+    return out
 end tell
 '''
 
