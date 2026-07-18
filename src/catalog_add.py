@@ -241,43 +241,55 @@ tell application "Music"
     activate
     open location "{url}"
 end tell
-delay 4
+
 tell application "System Events"
+    -- Phase 1: find the target track's row and click its More button. Polls
+    -- instead of a single fixed delay - real runs showed the album page
+    -- doesn't always finish rendering its track list in a fixed 4s window
+    -- (the same track that worked once later showed only the page's
+    -- "Suggested Songs"/"Featured Artists" recommendation sections, meaning
+    -- the scan ran before the actual track rows existed yet).
     set foundRow to false
     set moreClicked to false
     set clickError to ""
     set seenGroups to {{}}
-    tell process "Music"
-        try
-            set allElements to entire contents of front window
-            repeat with elem in allElements
-                set elemRole to ""
-                set elemDesc to ""
-                try
-                    set elemRole to (role of elem) as string
-                end try
-                try
-                    set elemDesc to (description of elem) as string
-                end try
-                -- Diagnostic only, for when the row match fails below - what
-                -- track-row titles did this page actually have? Capped so a
-                -- failure report stays readable.
-                if elemRole is "AXGroup" and elemDesc is not "group" and (count of seenGroups) < 20 then
-                    set end of seenGroups to elemDesc
-                end if
-                if not foundRow and elemDesc is "{title}" then
-                    set foundRow to true
-                end if
-                if foundRow and not moreClicked and elemRole is "AXButton" and elemDesc is "More" then
-                    click elem
-                    set moreClicked to true
-                    exit repeat
-                end if
-            end repeat
-        on error errMsg
-            set clickError to errMsg
-        end try
-    end tell
+    set attemptCount to 0
+    repeat until foundRow or attemptCount >= 8
+        set attemptCount to attemptCount + 1
+        delay 1.5
+        set seenGroups to {{}}
+        tell process "Music"
+            try
+                set allElements to entire contents of front window
+                repeat with elem in allElements
+                    set elemRole to ""
+                    set elemDesc to ""
+                    try
+                        set elemRole to (role of elem) as string
+                    end try
+                    try
+                        set elemDesc to (description of elem) as string
+                    end try
+                    -- Diagnostic only, for when the row match fails below -
+                    -- what track-row titles did this page actually have?
+                    -- Capped so a failure report stays readable.
+                    if elemRole is "AXGroup" and elemDesc is not "group" and (count of seenGroups) < 20 then
+                        set end of seenGroups to elemDesc
+                    end if
+                    if not foundRow and elemDesc is "{title}" then
+                        set foundRow to true
+                    end if
+                    if foundRow and not moreClicked and elemRole is "AXButton" and elemDesc is "More" then
+                        click elem
+                        set moreClicked to true
+                        exit repeat
+                    end if
+                end repeat
+            on error errMsg
+                set clickError to errMsg
+            end try
+        end tell
+    end repeat
     if clickError is not "" then
         return "ERROR finding/clicking row's More button: " & clickError
     end if
@@ -285,64 +297,74 @@ tell application "System Events"
         set AppleScript's text item delimiters to " || "
         set groupsText to seenGroups as text
         set AppleScript's text item delimiters to ""
-        return "ROW_NOT_FOUND (page showed: " & groupsText & ")"
+        return "ROW_NOT_FOUND after " & attemptCount & " attempts (page showed: " & groupsText & ")"
     end if
     if not moreClicked then
         return "MORE_BUTTON_NOT_FOUND_AFTER_ROW"
     end if
-    delay 1
 
+    -- Phase 2: click "Add to Playlist" in the context menu that just opened.
     set addToPlaylistClicked to false
-    try
-        set menuElements to entire contents of process "Music"
-        repeat with elem in menuElements
-            set elemRole to ""
-            set elemName to ""
-            try
-                set elemRole to (role of elem) as string
-            end try
-            if elemRole is "AXMenuItem" then
+    set menuAttempt to 0
+    repeat until addToPlaylistClicked or menuAttempt >= 5
+        set menuAttempt to menuAttempt + 1
+        delay 1
+        try
+            set menuElements to entire contents of process "Music"
+            repeat with elem in menuElements
+                set elemRole to ""
+                set elemName to ""
                 try
-                    set elemName to (name of elem) as string
+                    set elemRole to (role of elem) as string
                 end try
-                if elemName is "Add to Playlist" then
-                    click elem
-                    set addToPlaylistClicked to true
-                    exit repeat
+                if elemRole is "AXMenuItem" then
+                    try
+                        set elemName to (name of elem) as string
+                    end try
+                    if elemName is "Add to Playlist" then
+                        click elem
+                        set addToPlaylistClicked to true
+                        exit repeat
+                    end if
                 end if
-            end if
-        end repeat
-    on error errMsg2
-        return "ERROR finding Add to Playlist menu item: " & errMsg2
-    end try
+            end repeat
+        on error errMsg2
+            return "ERROR finding Add to Playlist menu item: " & errMsg2
+        end try
+    end repeat
     if not addToPlaylistClicked then
         return "ADD_TO_PLAYLIST_MENU_ITEM_NOT_FOUND"
     end if
-    delay 1
 
+    -- Phase 3: click the specific target playlist name in the submenu.
     set playlistClicked to false
-    try
-        set submenuElements to entire contents of process "Music"
-        repeat with elem in submenuElements
-            set elemRole to ""
-            set elemName to ""
-            try
-                set elemRole to (role of elem) as string
-            end try
-            if elemRole is "AXMenuItem" then
+    set submenuAttempt to 0
+    repeat until playlistClicked or submenuAttempt >= 5
+        set submenuAttempt to submenuAttempt + 1
+        delay 1
+        try
+            set submenuElements to entire contents of process "Music"
+            repeat with elem in submenuElements
+                set elemRole to ""
+                set elemName to ""
                 try
-                    set elemName to (name of elem) as string
+                    set elemRole to (role of elem) as string
                 end try
-                if elemName is "{playlist_name}" then
-                    click elem
-                    set playlistClicked to true
-                    exit repeat
+                if elemRole is "AXMenuItem" then
+                    try
+                        set elemName to (name of elem) as string
+                    end try
+                    if elemName is "{playlist_name}" then
+                        click elem
+                        set playlistClicked to true
+                        exit repeat
+                    end if
                 end if
-            end if
-        end repeat
-    on error errMsg3
-        return "ERROR finding target playlist in submenu: " & errMsg3
-    end try
+            end repeat
+        on error errMsg3
+            return "ERROR finding target playlist in submenu: " & errMsg3
+        end try
+    end repeat
     if not playlistClicked then
         return "TARGET_PLAYLIST_NOT_FOUND_IN_SUBMENU"
     end if

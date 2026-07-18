@@ -274,13 +274,22 @@ end tell
 '''
 
 
-def run_applescript(script: str) -> str:
+def run_applescript(script: str, timeout: float = 120.0) -> str:
     try:
-        proc = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        proc = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, timeout=timeout
+        )
     except FileNotFoundError:
         raise RuntimeError(
             "osascript not found — this only runs on macOS with Music.app "
             "installed. Use --dry-run to preview candidate lists anywhere else."
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"osascript did not finish within {timeout:.0f}s — most likely a macOS "
+            f"permission dialog (Accessibility/Automation) is open and waiting for "
+            f"you to click Allow, possibly behind another window. Check for that, "
+            f"approve it, then re-run."
         )
     if proc.returncode != 0:
         raise RuntimeError(f"osascript failed: {proc.stderr.strip()}")
