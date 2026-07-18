@@ -59,6 +59,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).parent))
 from create_playlists import (
+    as_escape,
     build_applescript,
     itunes_search,
     load_search_cache,
@@ -70,6 +71,7 @@ from create_playlists import (
 ROOT = Path(__file__).resolve().parent.parent
 MISSES_JSON_PATH = ROOT / "output" / "playlist_misses.json"
 INSPECT_PATH = ROOT / "output" / "catalog_add_inspect.txt"
+INSPECT_MENU_PATH = ROOT / "output" / "catalog_add_inspect_menu.txt"
 
 
 def find_catalog_url(artist: str, title: str, cache: dict) -> str | None:
@@ -137,6 +139,82 @@ tell application "System Events"
 end tell
 '''
 
+# Adding via the toolbar's "Add to Library" adds the whole album, not just
+# the one track - confirmed by inspecting the real album-page layout. The
+# per-row "More" (•••) button should open a menu scoped to just that track,
+# but its contents are unknown without real data, so this finds the target
+# row (matched by exact track-title description) and clicks its More button,
+# then dumps every menu-related element in the Music process - not just the
+# window, since a popup menu isn't necessarily nested inside it - so the
+# real menu item text/role can be read before attempting to click one.
+INSPECT_MENU_SCRIPT = '''
+tell application "Music"
+    activate
+    open location "{url}"
+end tell
+delay 4
+tell application "System Events"
+    tell process "Music"
+        set foundRow to false
+        set moreClicked to false
+        try
+            set allElements to entire contents of front window
+            repeat with elem in allElements
+                set elemRole to ""
+                set elemDesc to ""
+                try
+                    set elemRole to (role of elem) as string
+                end try
+                try
+                    set elemDesc to (description of elem) as string
+                end try
+                if not foundRow and elemDesc is "{title}" then
+                    set foundRow to true
+                end if
+                if foundRow and not moreClicked and elemRole is "AXButton" and elemDesc is "More" then
+                    click elem
+                    set moreClicked to true
+                    exit repeat
+                end if
+            end repeat
+        on error errMsg
+            return "ERROR finding/clicking row's More button: " & errMsg
+        end try
+        if not moreClicked then
+            return "MORE_BUTTON_NOT_FOUND_FOR_ROW (row title match failed, or no More button after it)"
+        end if
+        delay 1
+        set out to ""
+        try
+            set menuElements to entire contents of (process "Music")
+            repeat with elem in menuElements
+                set elemRole to ""
+                set elemName to ""
+                set elemDesc to ""
+                try
+                    set elemRole to (role of elem) as string
+                end try
+                if elemRole contains "Menu" then
+                    try
+                        set elemName to (name of elem) as string
+                    end try
+                    try
+                        set elemDesc to (description of elem) as string
+                    end try
+                    set out to out & elemRole & " | name=" & elemName & " | desc=" & elemDesc & linefeed
+                end if
+            end repeat
+        on error errMsg2
+            set out to "ERROR dumping menu: " & errMsg2
+        end try
+        if out is "" then
+            set out to "No menu-role elements found after clicking More - the menu may live outside the process's own tree, or the click didn't open one."
+        end if
+        return out
+    end tell
+end tell
+'''
+
 ADD_TO_LIBRARY_SCRIPT = '''
 tell application "Music"
     activate
@@ -198,6 +276,32 @@ def inspect_one(cache: dict, misses_by_profile: dict) -> None:
     print("No misses found to inspect.")
 
 
+def inspect_menu_one(cache: dict, misses_by_profile: dict) -> None:
+    for profile, misses in misses_by_profile.items():
+        if not misses:
+            continue
+        artist, title = misses[0]
+        print(f"Looking up catalog URL for: {artist} - {title}")
+        url = find_catalog_url(artist, title, cache)
+        if not url:
+            print("Could not resolve a catalog URL for this track.")
+            return
+        print(f"Found: {url}")
+        print(f"Opening in Music.app, clicking the row's More button for '{title}', "
+              f"and dumping any menu that appears (no further clicking)...")
+        script = INSPECT_MENU_SCRIPT.format(url=url, title=as_escape(title))
+        try:
+            output = run_applescript(script)
+        except RuntimeError as e:
+            print(f"ERROR: {e}")
+            return
+        INSPECT_MENU_PATH.write_text(output)
+        print(f"Wrote {INSPECT_MENU_PATH} ({len(output.splitlines())} lines).")
+        print("Send me that file's contents — I'll target the real per-track 'Add' menu item precisely.")
+        return
+    print("No misses found to inspect.")
+
+
 def add_to_library(artist: str, title: str, url: str) -> str:
     script = ADD_TO_LIBRARY_SCRIPT.format(url=url)
     try:
@@ -213,6 +317,10 @@ def main() -> None:
                          help="Cap how many misses to attempt (recommended: start with 3).")
     parser.add_argument("--inspect", action="store_true",
                          help="Dump the accessibility tree for one track instead of clicking anything.")
+    parser.add_argument("--inspect-menu", action="store_true",
+                         help="Click one track's row-level More button and dump the menu that "
+                              "appears, instead of clicking further. Use this if you want only "
+                              "the single track added, not its whole album.")
     args = parser.parse_args()
 
     if not MISSES_JSON_PATH.exists():
@@ -232,6 +340,11 @@ def main() -> None:
 
     if args.inspect:
         inspect_one(cache, misses_by_profile)
+        save_search_cache(cache)
+        return
+
+    if args.inspect_menu:
+        inspect_menu_one(cache, misses_by_profile)
         save_search_cache(cache)
         return
 
