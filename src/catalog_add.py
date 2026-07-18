@@ -157,7 +157,7 @@ tell application "System Events"
                 try
                     set elemDesc to (description of elem) as string
                 end try
-                if elemRole is "AXButton" and (elemDesc contains "Add") then
+                if elemRole is "AXButton" and (elemDesc is "Add to Library" or elemDesc is "Add") then
                     click elem
                     delay 1.5
                     return "CLICKED: " & elemDesc
