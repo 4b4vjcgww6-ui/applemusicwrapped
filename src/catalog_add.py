@@ -99,10 +99,11 @@ def find_catalog_url(artist: str, title: str, cache: dict) -> str | None:
 
 
 INSPECT_SCRIPT = '''
-tell application "Music" to activate
-delay 1
-open location "{url}"
-delay 3
+tell application "Music"
+    activate
+    open location "{url}"
+end tell
+delay 4
 tell application "System Events"
     tell process "Music"
         set out to ""
@@ -137,10 +138,11 @@ end tell
 '''
 
 ADD_TO_LIBRARY_SCRIPT = '''
-tell application "Music" to activate
-delay 1
-open location "{url}"
-delay 3
+tell application "Music"
+    activate
+    open location "{url}"
+end tell
+delay 4
 tell application "System Events"
     tell process "Music"
         try
