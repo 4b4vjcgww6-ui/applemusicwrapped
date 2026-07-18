@@ -246,6 +246,7 @@ tell application "System Events"
     set foundRow to false
     set moreClicked to false
     set clickError to ""
+    set seenGroups to {{}}
     tell process "Music"
         try
             set allElements to entire contents of front window
@@ -258,6 +259,12 @@ tell application "System Events"
                 try
                     set elemDesc to (description of elem) as string
                 end try
+                -- Diagnostic only, for when the row match fails below - what
+                -- track-row titles did this page actually have? Capped so a
+                -- failure report stays readable.
+                if elemRole is "AXGroup" and elemDesc is not "group" and (count of seenGroups) < 20 then
+                    set end of seenGroups to elemDesc
+                end if
                 if not foundRow and elemDesc is "{title}" then
                     set foundRow to true
                 end if
@@ -274,8 +281,14 @@ tell application "System Events"
     if clickError is not "" then
         return "ERROR finding/clicking row's More button: " & clickError
     end if
+    if not foundRow then
+        set AppleScript's text item delimiters to " || "
+        set groupsText to seenGroups as text
+        set AppleScript's text item delimiters to ""
+        return "ROW_NOT_FOUND (page showed: " & groupsText & ")"
+    end if
     if not moreClicked then
-        return "MORE_BUTTON_NOT_FOUND_FOR_ROW"
+        return "MORE_BUTTON_NOT_FOUND_AFTER_ROW"
     end if
     delay 1
 
